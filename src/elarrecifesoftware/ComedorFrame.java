@@ -76,7 +76,7 @@ public class ComedorFrame extends JFrame {
     }
 
     private void manejarSeleccionMesa(ListSelectionEvent e) {
-           if (!e.getValueIsAdjusting()) {
+                   if (!e.getValueIsAdjusting()) {
             String selected = listaMesas.getSelectedValue();
             if (selected != null) {
                 try {
@@ -220,51 +220,7 @@ public class ComedorFrame extends JFrame {
 
     private void agregarProductoAMesa() {
         if (mesaSeleccionadaId == -1) return;
-
-        JDialog dialog = new JDialog(this, "Agregar Producto", true);
-        dialog.setLayout(new GridLayout(3, 2));
-
-        JComboBox<String> comboProductos = new JComboBox<>();
-        JTextField txtCantidad = new JTextField("1");
-        JButton btnConfirmar = new JButton("Agregar");
-
-        // Cargar productos
-        try (Connection con = ConexionDB.conectar()) {
-            Statement stmt = con.createStatement();
-            ResultSet rs = stmt.executeQuery("SELECT id, nombre FROM productos");
-            while (rs.next()) {
-                comboProductos.addItem(rs.getString("nombre"));
-            }
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(dialog, "Error al cargar productos", "Error", JOptionPane.ERROR_MESSAGE);
-        }
-
-        btnConfirmar.addActionListener(e -> {
-            try {
-                int cantidad = Integer.parseInt(txtCantidad.getText());
-                if (cantidad <= 0) throw new NumberFormatException();
-                
-                String producto = (String) comboProductos.getSelectedItem();
-                int productoId = obtenerIdProducto(producto);
-                
-                if (productoId != -1) {
-                    agregarProductoAPedidoMesaDB(mesaSeleccionadaId, productoId, cantidad);
-                    dialog.dispose();
-                }
-            } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(dialog, "Ingrese cantidad válida", "Error", JOptionPane.ERROR_MESSAGE);
-            }
-        });
-
-        dialog.add(new JLabel("Producto:"));
-        dialog.add(comboProductos);
-        dialog.add(new JLabel("Cantidad:"));
-        dialog.add(txtCantidad);
-        dialog.add(new JLabel());
-        dialog.add(btnConfirmar);
-        dialog.pack();
-        dialog.setLocationRelativeTo(this);
-        dialog.setVisible(true);
+        new SelectorProductoDialog(mesaSeleccionadaId).setVisible(true);
     }
 
     private int obtenerIdProducto(String nombre) {
@@ -487,5 +443,125 @@ public class ComedorFrame extends JFrame {
 
     private void limpiarPedidos() {
         modeloTablaPedidos.setRowCount(0);
+    }
+
+    /**
+     * Diálogo para seleccionar productos mediante botones de categorías y
+     * subcategorías. Permite elegir la cantidad a agregar y utiliza el método
+     * existente para registrar el pedido en la mesa.
+     */
+    private class SelectorProductoDialog extends JDialog {
+        private final JPanel panelCategorias = new JPanel(new GridLayout(0, 4, 10, 10));
+        private final JPanel panelSubcategorias = new JPanel(new GridLayout(0, 4, 10, 10));
+        private final JPanel panelProductos = new JPanel(new GridLayout(0, 4, 10, 10));
+        private final int mesaId;
+
+        SelectorProductoDialog(int mesaId) {
+            super(ComedorFrame.this, "Seleccionar Producto", true);
+            this.mesaId = mesaId;
+
+            setLayout(new BorderLayout(5, 5));
+            add(new JScrollPane(panelCategorias), BorderLayout.NORTH);
+            add(new JScrollPane(panelSubcategorias), BorderLayout.CENTER);
+            add(new JScrollPane(panelProductos), BorderLayout.SOUTH);
+
+            cargarCategorias();
+
+            setSize(700, 500);
+            setLocationRelativeTo(ComedorFrame.this);
+        }
+
+        private JButton crearBoton(String texto) {
+            JButton btn = new JButton("<html><center" + ">" + texto + "</center></html>");
+            btn.setFont(btn.getFont().deriveFont(Font.BOLD, 16f));
+            btn.setPreferredSize(new Dimension(150, 60));
+            return btn;
+        }
+
+        private void cargarCategorias() {
+            panelCategorias.removeAll();
+            try (Connection con = ConexionDB.conectar();
+                 Statement st = con.createStatement();
+                 ResultSet rs = st.executeQuery("SELECT id, nombre FROM categorias ORDER BY nombre")) {
+                while (rs.next()) {
+                    int id = rs.getInt("id");
+                    String nombre = rs.getString("nombre");
+                    JButton btn = crearBoton(nombre);
+                    btn.addActionListener(e -> cargarSubcategorias(id));
+                    panelCategorias.add(btn);
+                }
+            } catch (SQLException ex) {
+                JOptionPane.showMessageDialog(this, "Error al cargar categorías: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+            panelCategorias.revalidate();
+            panelCategorias.repaint();
+        }
+
+        private void cargarSubcategorias(int categoriaId) {
+            panelSubcategorias.removeAll();
+            boolean tieneSub = false;
+            try (Connection con = ConexionDB.conectar();
+                 PreparedStatement ps = con.prepareStatement("SELECT id, nombre FROM subcategorias WHERE categoria_id = ? ORDER BY nombre")) {
+                ps.setInt(1, categoriaId);
+                ResultSet rs = ps.executeQuery();
+                while (rs.next()) {
+                    tieneSub = true;
+                    int id = rs.getInt("id");
+                    String nombre = rs.getString("nombre");
+                    JButton btn = crearBoton(nombre);
+                    btn.addActionListener(e -> cargarProductos(categoriaId, id));
+                    panelSubcategorias.add(btn);
+                }
+            } catch (SQLException ex) {
+                JOptionPane.showMessageDialog(this, "Error al cargar subcategorías: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+            panelSubcategorias.revalidate();
+            panelSubcategorias.repaint();
+            if (!tieneSub) {
+                cargarProductos(categoriaId, -1);
+            } else {
+                panelProductos.removeAll();
+                panelProductos.revalidate();
+                panelProductos.repaint();
+            }
+        }
+
+        private void cargarProductos(int categoriaId, int subcategoriaId) {
+            panelProductos.removeAll();
+            String sql = "SELECT id, nombre FROM productos WHERE categoria_id = ?" +
+                         (subcategoriaId == -1 ? "" : " AND subcategoria_id = ?") +
+                         " ORDER BY nombre";
+            try (Connection con = ConexionDB.conectar();
+                 PreparedStatement ps = con.prepareStatement(sql)) {
+                ps.setInt(1, categoriaId);
+                if (subcategoriaId != -1) ps.setInt(2, subcategoriaId);
+                ResultSet rs = ps.executeQuery();
+                while (rs.next()) {
+                    int id = rs.getInt("id");
+                    String nombre = rs.getString("nombre");
+                    JButton btn = crearBoton(nombre);
+                    btn.addActionListener(e -> seleccionarProducto(id));
+                    panelProductos.add(btn);
+                }
+            } catch (SQLException ex) {
+                JOptionPane.showMessageDialog(this, "Error al cargar productos: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+            panelProductos.revalidate();
+            panelProductos.repaint();
+        }
+
+        private void seleccionarProducto(int productoId) {
+            String cantStr = JOptionPane.showInputDialog(this, "Cantidad:", "1");
+            if (cantStr == null) return;
+            try {
+                int cantidad = Integer.parseInt(cantStr);
+                if (cantidad > 0) {
+                    agregarProductoAPedidoMesaDB(mesaId, productoId, cantidad);
+                    dispose();
+                }
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Cantidad inválida", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
     }
 }
