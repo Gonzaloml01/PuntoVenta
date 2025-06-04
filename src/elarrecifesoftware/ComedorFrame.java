@@ -76,11 +76,17 @@ public class ComedorFrame extends JFrame {
     }
 
     private void manejarSeleccionMesa(ListSelectionEvent e) {
-        if (!e.getValueIsAdjusting()) {
+           if (!e.getValueIsAdjusting()) {
             String selected = listaMesas.getSelectedValue();
             if (selected != null) {
-                mesaSeleccionadaId = Integer.parseInt(selected.split("ID:")[1].split(" ")[0]);
-                cargarPedidosMesa(mesaSeleccionadaId);
+                try {
+                    int start = selected.indexOf("ID:") + 3;
+                    int end = selected.indexOf(')', start);
+                    mesaSeleccionadaId = Integer.parseInt(selected.substring(start, end));
+                    cargarPedidosMesa(mesaSeleccionadaId);
+                } catch (Exception ex) {
+                    mesaSeleccionadaId = -1;
+                }
             }
             actualizarEstadoBotones();
         }
