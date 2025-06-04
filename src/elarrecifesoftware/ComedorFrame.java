@@ -12,7 +12,8 @@ public class ComedorFrame extends JFrame {
     private DefaultListModel<String> mesasModel;
     private JTable tablaPedidos;
     private DefaultTableModel modeloTablaPedidos;
-     private JButton btnAbrirMesa, btnRenombrarMesa, btnCerrarMesa, btnCobrarMesa, btnAgregarProducto, btnEliminarProducto;
+     private JButton btnAbrirMesa, btnRenombrarMesa, btnCerrarMesa, btnCobrarMesa,
+            btnAgregarProducto, btnAgregarBebida, btnEliminarProducto;
     private int usuarioLogueadoId, turnoActualId, mesaSeleccionadaId = -1;
     private java.util.List<Integer> mesaIds = new java.util.ArrayList<>();
 
@@ -37,7 +38,7 @@ public class ComedorFrame extends JFrame {
         panelMesas.add(new JScrollPane(listaMesas), BorderLayout.CENTER);
 
         // Panel Botones Mesas
-        JPanel panelBotonesMesas = new JPanel(new GridLayout(1, 4));
+         JPanel panelBotonesMesas = new JPanel(new GridLayout(1, 4));
         btnAbrirMesa = new JButton("Abrir Mesa");
         btnRenombrarMesa = new JButton("Renombrar Mesa");
         btnCerrarMesa = new JButton("Cerrar/Eliminar Mesa");
@@ -59,12 +60,15 @@ public class ComedorFrame extends JFrame {
         panelPedidos.add(new JScrollPane(tablaPedidos), BorderLayout.CENTER);
 
         // Panel Botones Pedidos
-        JPanel panelBotonesPedidos = new JPanel();
+                JPanel panelBotonesPedidos = new JPanel();
         btnAgregarProducto = new JButton("Agregar Producto");
+        btnAgregarBebida = new JButton("Agregar Bebida");
         btnEliminarProducto = new JButton("Eliminar Producto");
-        btnAgregarProducto.addActionListener(e -> agregarProductoAMesa());
+        btnAgregarProducto.addActionListener(e -> agregarProductoAMesa(false));
+        btnAgregarBebida.addActionListener(e -> agregarProductoAMesa(true));
         btnEliminarProducto.addActionListener(e -> eliminarProductoDePedido());
         panelBotonesPedidos.add(btnAgregarProducto);
+        panelBotonesPedidos.add(btnAgregarBebida);
         panelBotonesPedidos.add(btnEliminarProducto);
         panelPedidos.add(panelBotonesPedidos, BorderLayout.SOUTH);
 
@@ -90,9 +94,10 @@ public class ComedorFrame extends JFrame {
     }
 
     private void actualizarEstadoBotones() {
-       boolean mesaSeleccionada = mesaSeleccionadaId != -1;
+              boolean mesaSeleccionada = mesaSeleccionadaId != -1;
         btnRenombrarMesa.setEnabled(mesaSeleccionada);
         btnAgregarProducto.setEnabled(mesaSeleccionada);
+        btnAgregarBebida.setEnabled(mesaSeleccionada);
         btnEliminarProducto.setEnabled(mesaSeleccionada);
         btnCerrarMesa.setEnabled(mesaSeleccionada);
         btnCobrarMesa.setEnabled(mesaSeleccionada);
@@ -459,7 +464,7 @@ public class ComedorFrame extends JFrame {
         }
     }
 
-    private void limpiarPedidos() {
+     private void limpiarPedidos() {
         modeloTablaPedidos.setRowCount(0);
     }
 
@@ -468,15 +473,22 @@ public class ComedorFrame extends JFrame {
      * subcategorías. Permite elegir la cantidad a agregar y utiliza el método
      * existente para registrar el pedido en la mesa.
      */
+    /**
+     * Selector de productos que muestra categorías de la base de datos.
+     * Si {@code soloBebidas} es verdadero filtra aquellas donde
+     * la columna "tipo" de la tabla categorías sea "Bebida".
+     */
     private class SelectorProductoDialog extends JDialog {
         private final JPanel panelCategorias = new JPanel(new GridLayout(0, 4, 10, 10));
         private final JPanel panelSubcategorias = new JPanel(new GridLayout(0, 4, 10, 10));
         private final JPanel panelProductos = new JPanel(new GridLayout(0, 4, 10, 10));
         private final int mesaId;
+        private final boolean soloBebidas;
 
-        SelectorProductoDialog(int mesaId) {
+        SelectorProductoDialog(int mesaId, boolean soloBebidas) {
             super(ComedorFrame.this, "Seleccionar Producto", true);
             this.mesaId = mesaId;
+            this.soloBebidas = soloBebidas;
 
             setLayout(new BorderLayout(5, 5));
             add(new JScrollPane(panelCategorias), BorderLayout.NORTH);
@@ -498,9 +510,12 @@ public class ComedorFrame extends JFrame {
 
         private void cargarCategorias() {
             panelCategorias.removeAll();
+            String sql = "SELECT id, nombre FROM categorias" +
+                         (soloBebidas ? " WHERE tipo = 'Bebida'" : "") +
+                         " ORDER BY nombre";
             try (Connection con = ConexionDB.conectar();
                  Statement st = con.createStatement();
-                 ResultSet rs = st.executeQuery("SELECT id, nombre FROM categorias ORDER BY nombre")) {
+                 ResultSet rs = st.executeQuery(sql)) {
                 while (rs.next()) {
                     int id = rs.getInt("id");
                     String nombre = rs.getString("nombre");
