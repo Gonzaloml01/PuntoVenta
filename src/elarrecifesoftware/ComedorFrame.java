@@ -6,17 +6,15 @@ import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.sql.*;
-import java.util.HashMap;
-import java.util.Map;
 
 public class ComedorFrame extends JFrame {
     private JList<String> listaMesas;
     private DefaultListModel<String> mesasModel;
     private JTable tablaPedidos;
     private DefaultTableModel modeloTablaPedidos;
-    private JButton btnAbrirMesa, btnCerrarMesa, btnAgregarProducto, btnEliminarProducto, btnCobrarMesa;
+     private JButton btnAbrirMesa, btnRenombrarMesa, btnCerrarMesa, btnCobrarMesa, btnAgregarProducto, btnEliminarProducto;
     private int usuarioLogueadoId, turnoActualId, mesaSeleccionadaId = -1;
-    private Map<Integer, Integer> mapaMesaIdToListIndex = new HashMap<>();
+    private java.util.List<Integer> mesaIds = new java.util.ArrayList<>();
 
     public ComedorFrame(int usuarioLogueadoId, int turnoActualId) {
         this.usuarioLogueadoId = usuarioLogueadoId;
@@ -39,14 +37,17 @@ public class ComedorFrame extends JFrame {
         panelMesas.add(new JScrollPane(listaMesas), BorderLayout.CENTER);
 
         // Panel Botones Mesas
-        JPanel panelBotonesMesas = new JPanel(new GridLayout(1, 3));
+        JPanel panelBotonesMesas = new JPanel(new GridLayout(1, 4));
         btnAbrirMesa = new JButton("Abrir Mesa");
+        btnRenombrarMesa = new JButton("Renombrar Mesa");
         btnCerrarMesa = new JButton("Cerrar/Eliminar Mesa");
         btnCobrarMesa = new JButton("Cobrar Mesa");
         btnAbrirMesa.addActionListener(e -> abrirNuevaMesa());
+        btnRenombrarMesa.addActionListener(e -> renombrarMesa());
         btnCerrarMesa.addActionListener(e -> cerrarMesa());
         btnCobrarMesa.addActionListener(e -> cobrarMesa());
         panelBotonesMesas.add(btnAbrirMesa);
+        panelBotonesMesas.add(btnRenombrarMesa);
         panelBotonesMesas.add(btnCerrarMesa);
         panelBotonesMesas.add(btnCobrarMesa);
         panelMesas.add(panelBotonesMesas, BorderLayout.SOUTH);
@@ -75,25 +76,22 @@ public class ComedorFrame extends JFrame {
         actualizarEstadoBotones();
     }
 
-    private void manejarSeleccionMesa(ListSelectionEvent e) {
-                   if (!e.getValueIsAdjusting()) {
-            String selected = listaMesas.getSelectedValue();
-            if (selected != null) {
-                try {
-                    int start = selected.indexOf("ID:") + 3;
-                    int end = selected.indexOf(')', start);
-                    mesaSeleccionadaId = Integer.parseInt(selected.substring(start, end));
-                    cargarPedidosMesa(mesaSeleccionadaId);
-                } catch (Exception ex) {
-                    mesaSeleccionadaId = -1;
-                }
+     private void manejarSeleccionMesa(ListSelectionEvent e) {
+        if (!e.getValueIsAdjusting()) {
+            int index = listaMesas.getSelectedIndex();
+            if (index != -1 && index < mesaIds.size()) {
+                mesaSeleccionadaId = mesaIds.get(index);
+                cargarPedidosMesa(mesaSeleccionadaId);
+            } else {
+                mesaSeleccionadaId = -1;
             }
             actualizarEstadoBotones();
         }
     }
 
     private void actualizarEstadoBotones() {
-        boolean mesaSeleccionada = mesaSeleccionadaId != -1;
+       boolean mesaSeleccionada = mesaSeleccionadaId != -1;
+        btnRenombrarMesa.setEnabled(mesaSeleccionada);
         btnAgregarProducto.setEnabled(mesaSeleccionada);
         btnEliminarProducto.setEnabled(mesaSeleccionada);
         btnCerrarMesa.setEnabled(mesaSeleccionada);
@@ -101,23 +99,22 @@ public class ComedorFrame extends JFrame {
     }
 
     private void cargarMesas() {
-        mesasModel.clear();
-        mapaMesaIdToListIndex.clear();
+          mesasModel.clear();
+        mesaIds.clear();
         try (Connection con = ConexionDB.conectar()) {
             Statement stmt = con.createStatement();
             ResultSet rs = stmt.executeQuery("SELECT id, numero, estado FROM mesas ORDER BY numero");
-            int index = 0;
             while (rs.next()) {
-                String info = "Mesa " + rs.getInt("numero") + " (ID:" + rs.getInt("id") + ") - " + rs.getString("estado");
+                mesaIds.add(rs.getInt("id"));
+                String info = "Mesa " + rs.getInt("numero") + " - " + rs.getString("estado");
                 mesasModel.addElement(info);
-                mapaMesaIdToListIndex.put(rs.getInt("id"), index++);
             }
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(this, "Error al cargar mesas: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    private void abrirNuevaMesa() {
+      private void abrirNuevaMesa() {
         String input = JOptionPane.showInputDialog(this, "Ingrese número de mesa:", "Nueva Mesa", JOptionPane.QUESTION_MESSAGE);
         if (input == null || input.trim().isEmpty()) return;
 
@@ -140,15 +137,36 @@ public class ComedorFrame extends JFrame {
             psInsert.setInt(1, numeroMesa);
             psInsert.executeUpdate();
 
-            ResultSet rs = psInsert.getGeneratedKeys();
-            if (rs.next()) {
-                JOptionPane.showMessageDialog(this, "Mesa creada con ID: " + rs.getInt(1), "Éxito", JOptionPane.INFORMATION_MESSAGE);
+             if (psInsert.getGeneratedKeys().next()) {
+                JOptionPane.showMessageDialog(this, "Mesa creada", "Éxito", JOptionPane.INFORMATION_MESSAGE);
                 cargarMesas();
             }
         } catch (NumberFormatException e) {
             JOptionPane.showMessageDialog(this, "Ingrese un número válido", "Error", JOptionPane.ERROR_MESSAGE);
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(this, "Error al crear mesa: " + e.getMessage(), "Error SQL", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void renombrarMesa() {
+        if (mesaSeleccionadaId == -1) return;
+
+        String input = JOptionPane.showInputDialog(this, "Nuevo número de mesa:", "Renombrar Mesa", JOptionPane.QUESTION_MESSAGE);
+        if (input == null || input.trim().isEmpty()) return;
+
+        try (Connection con = ConexionDB.conectar()) {
+            int numero = Integer.parseInt(input);
+
+            PreparedStatement ps = con.prepareStatement("UPDATE mesas SET numero = ? WHERE id = ?");
+            ps.setInt(1, numero);
+            ps.setInt(2, mesaSeleccionadaId);
+            if (ps.executeUpdate() > 0) {
+                cargarMesas();
+            }
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Ingrese un número válido", "Error", JOptionPane.ERROR_MESSAGE);
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error al renombrar mesa: " + e.getMessage(), "Error SQL", JOptionPane.ERROR_MESSAGE);
         }
     }
 
