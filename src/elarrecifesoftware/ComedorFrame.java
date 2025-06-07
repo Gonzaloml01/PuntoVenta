@@ -60,10 +60,14 @@ public class ComedorFrame extends JFrame {
         panelPedidos.add(new JScrollPane(tablaPedidos), BorderLayout.CENTER);
 
         // Panel Botones Pedidos
-                JPanel panelBotonesPedidos = new JPanel();
+               JPanel panelBotonesPedidos = new JPanel();
         btnAgregarProducto = new JButton("Agregar Producto");
         btnAgregarBebida = new JButton("Agregar Bebida");
         btnEliminarProducto = new JButton("Eliminar Producto");
+        // Al presionar "Agregar Producto" se muestran todas las categorías.
+        // El botón "Agregar Bebida" filtra únicamente las categorías marcadas
+        // como bebidas. Ambos delegan en un método común para abrir el
+        // selector visual de productos.
         btnAgregarProducto.addActionListener(e -> agregarProductoAMesa(false));
         btnAgregarBebida.addActionListener(e -> agregarProductoAMesa(true));
         btnEliminarProducto.addActionListener(e -> eliminarProductoDePedido());
@@ -80,7 +84,7 @@ public class ComedorFrame extends JFrame {
         actualizarEstadoBotones();
     }
 
-     private void manejarSeleccionMesa(ListSelectionEvent e) {
+         private void manejarSeleccionMesa(ListSelectionEvent e) {
         if (!e.getValueIsAdjusting()) {
             int index = listaMesas.getSelectedIndex();
             if (index != -1 && index < mesaIds.size()) {
@@ -94,7 +98,7 @@ public class ComedorFrame extends JFrame {
     }
 
     private void actualizarEstadoBotones() {
-              boolean mesaSeleccionada = mesaSeleccionadaId != -1;
+                    boolean mesaSeleccionada = mesaSeleccionadaId != -1;
         btnRenombrarMesa.setEnabled(mesaSeleccionada);
         btnAgregarProducto.setEnabled(mesaSeleccionada);
         btnAgregarBebida.setEnabled(mesaSeleccionada);
@@ -148,7 +152,7 @@ public class ComedorFrame extends JFrame {
             }
         } catch (NumberFormatException e) {
             JOptionPane.showMessageDialog(this, "Ingrese un número válido", "Error", JOptionPane.ERROR_MESSAGE);
-        } catch (SQLException e) {
+         } catch (SQLException e) {
             JOptionPane.showMessageDialog(this, "Error al crear mesa: " + e.getMessage(), "Error SQL", JOptionPane.ERROR_MESSAGE);
         }
     }
@@ -174,7 +178,7 @@ public class ComedorFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "Error al renombrar mesa: " + e.getMessage(), "Error SQL", JOptionPane.ERROR_MESSAGE);
         }
     }
-
+    
     private void cerrarMesa() {
         if (mesaSeleccionadaId == -1) return;
 
@@ -241,9 +245,21 @@ public class ComedorFrame extends JFrame {
         }
     }
 
+    /**
+     * Abre el selector de productos mostrando todas las categorías.
+     * Se mantiene para compatibilidad con versiones anteriores del código.
+     */
     private void agregarProductoAMesa() {
+        agregarProductoAMesa(false);
+    }
+
+    /**
+     * Muestra el selector de productos. Si {@code soloBebidas} es verdadero
+     * se filtrarán únicamente las categorías de bebidas.
+     */
+    private void agregarProductoAMesa(boolean soloBebidas) {
         if (mesaSeleccionadaId == -1) return;
-        new SelectorProductoDialog(mesaSeleccionadaId).setVisible(true);
+        new SelectorProductoDialog(mesaSeleccionadaId, soloBebidas).setVisible(true);
     }
 
     private int obtenerIdProducto(String nombre) {
@@ -464,7 +480,7 @@ public class ComedorFrame extends JFrame {
         }
     }
 
-     private void limpiarPedidos() {
+            private void limpiarPedidos() {
         modeloTablaPedidos.setRowCount(0);
     }
 
@@ -510,22 +526,43 @@ public class ComedorFrame extends JFrame {
 
         private void cargarCategorias() {
             panelCategorias.removeAll();
-            String sql = "SELECT id, nombre FROM categorias" +
-                         (soloBebidas ? " WHERE tipo = 'Bebida'" : "") +
-                         " ORDER BY nombre";
+            String baseSql = "SELECT id, nombre FROM categorias ORDER BY nombre";
+            String sql = soloBebidas
+                    ? "SELECT id, nombre FROM categorias WHERE tipo = 'Bebida' ORDER BY nombre"
+                    : baseSql;
+
             try (Connection con = ConexionDB.conectar();
-                 Statement st = con.createStatement();
-                 ResultSet rs = st.executeQuery(sql)) {
-                while (rs.next()) {
-                    int id = rs.getInt("id");
-                    String nombre = rs.getString("nombre");
-                    JButton btn = crearBoton(nombre);
-                    btn.addActionListener(e -> cargarSubcategorias(id));
-                    panelCategorias.add(btn);
+                 Statement st = con.createStatement()) {
+                try (ResultSet rs = st.executeQuery(sql)) {
+                    while (rs.next()) {
+                        int id = rs.getInt("id");
+                        String nombre = rs.getString("nombre");
+                        JButton btn = crearBoton(nombre);
+                        btn.addActionListener(e -> cargarSubcategorias(id));
+                        panelCategorias.add(btn);
+                    }
                 }
             } catch (SQLException ex) {
-                JOptionPane.showMessageDialog(this, "Error al cargar categorías: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                // Si la consulta filtrada falla (por ejemplo, no existe la columna "tipo"), volver a la consulta básica
+                if (soloBebidas) {
+                    try (Connection con = ConexionDB.conectar();
+                         Statement st = con.createStatement();
+                         ResultSet rs = st.executeQuery(baseSql)) {
+                        while (rs.next()) {
+                            int id = rs.getInt("id");
+                            String nombre = rs.getString("nombre");
+                            JButton btn = crearBoton(nombre);
+                            btn.addActionListener(e -> cargarSubcategorias(id));
+                            panelCategorias.add(btn);
+                        }
+                    } catch (SQLException ex2) {
+                        JOptionPane.showMessageDialog(this, "Error al cargar categorías: " + ex2.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                } else {
+                    JOptionPane.showMessageDialog(this, "Error al cargar categorías: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
             }
+
             panelCategorias.revalidate();
             panelCategorias.repaint();
         }
